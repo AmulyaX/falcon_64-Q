@@ -144,6 +144,9 @@ TARGET_COMPILE_WITH_MSM_KERNEL := true
 #Enable PD locater/notifier
 TARGET_PD_SERVICE_ENABLED := true
 
+# Temporarily allow eng and debug LOCAL_MODULE_TAGS
+BUILD_BROKEN_ENG_DEBUG_TAGS := true
+
 #Enable HW based full disk encryption
 TARGET_HW_DISK_ENCRYPTION := true
 
