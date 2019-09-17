@@ -1,4 +1,7 @@
 TARGET_USES_AOSP := true
+ALLOW_MISSING_DEPENDENCIES := true
+
+TARGET_SYSTEM_PROP := device/qcom/sdm660_64/system.prop
 
 DEVICE_PACKAGE_OVERLAYS := device/qcom/sdm660_64/overlay
 
@@ -22,12 +25,10 @@ TARGET_DISABLE_DASH := true
 
 TARGET_KERNEL_VERSION := 4.4
 BOARD_FRP_PARTITION_NAME := frp
-TARGET_USES_NQ_NFC := true
 
 # enable the SVA in UI area
 TARGET_USE_UI_SVA := true
 
-TARGET_USES_MKE2FS := true
 #QTIC flag
 -include $(QCPATH)/common/config/qtic-config.mk
 
@@ -48,6 +49,19 @@ PRODUCT_COPY_FILES += \
     device/qcom/sdm660_64/media_codecs_performance.xml:$(TARGET_COPY_OUT_VENDOR)/etc/media_codecs_performance.xml \
     device/qcom/sdm660_64/media_codecs_performance_sdm660_v1.xml:$(TARGET_COPY_OUT_VENDOR)/etc/media_codecs_performance_sdm660_v1.xml \
     device/qcom/sdm660_64/media_codecs_vendor_audio.xml:$(TARGET_COPY_OUT_VENDOR)/etc/media_codecs_vendor_audio.xml
+
+# Vendor property overrides
+ifeq ($(GENERIC_ODM_IMAGE),true)
+  $(warning "Forcing codec2.0 HW for generic odm build variant")
+  #Set default ranks and rank Codec 2.0 over OMX codecs
+  PRODUCT_ODM_PROPERTIES += debug.stagefright.ccodec=4
+  PRODUCT_ODM_PROPERTIES += debug.stagefright.omx_default_rank=1000
+else
+  $(warning "Enabling codec2.0 SW only for non-generic odm build variant")
+  #Rank OMX SW codecs lower than OMX HW codecs
+  PRODUCT_PROPERTY_OVERRIDES += debug.stagefright.omx_default_rank.sw-audio=1
+  PRODUCT_PROPERTY_OVERRIDES += debug.stagefright.omx_default_rank=0
+endif
 endif #TARGET_ENABLE_QC_AV_ENHANCEMENTS
 
 # video seccomp policy files
@@ -112,6 +126,8 @@ PRODUCT_PACKAGES += telephony-ext
 
 ifneq ($(strip $(QCPATH)),)
 PRODUCT_BOOT_JARS += WfdCommon
+#Android oem shutdown hook
+#PRODUCT_BOOT_JARS += oem-services
 endif
 
 # system prop for Bluetooth SOC type
@@ -121,12 +137,13 @@ PRODUCT_PROPERTY_OVERRIDES += \
 DEVICE_MANIFEST_FILE := device/qcom/sdm660_64/manifest.xml
 DEVICE_MATRIX_FILE   := device/qcom/common/compatibility_matrix.xml
 DEVICE_FRAMEWORK_MANIFEST_FILE := device/qcom/sdm660_64/framework_manifest.xml
-DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE := device/qcom/common/vendor_framework_compatibility_matrix.xml
-DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE += \
-    device/qcom/sdm660_64/vendor_framework_compatibility_matrix.xml
+DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE := vendor/qcom/opensource/core-utils/vendor_framework_compatibility_matrix.xml
 
 # Audio configuration file
 -include $(TOPDIR)hardware/qcom/audio/configs/sdm660/sdm660.mk
+-include $(TOPDIR)vendor/qcom/opensource/audio-hal/primary-hal/configs/sdm660/sdm660.mk
+
+USE_LIB_PROCESS_GROUP := true
 
 PRODUCT_PACKAGES += android.hardware.media.omx@1.0-impl
 
@@ -207,6 +224,9 @@ PRODUCT_PROPERTY_OVERRIDES += \
     ro.vendor.sensors.cmc=false \
     ro.vendor.sdk.sensors.gestures=false
 
+# privapp-permissions whitelisting
+PRODUCT_PROPERTY_OVERRIDES += ro.control_privapp_permissions=enforce
+
 # FBE support
 PRODUCT_COPY_FILES += \
     device/qcom/sdm660_64/init.qti.qseecomd.sh:$(TARGET_COPY_OUT_VENDOR)/bin/init.qti.qseecomd.sh
@@ -243,6 +263,20 @@ PRODUCT_PACKAGES += \
 #       $(QCPATH)/qrdplus/globalization/multi-language/res-overlay \
 #      $(PRODUCT_PACKAGE_OVERLAYS)
 
+# Enable logdumpd service only for non-perf bootimage
+ifeq ($(findstring perf,$(KERNEL_DEFCONFIG)),)
+    ifeq ($(TARGET_BUILD_VARIANT),user)
+        PRODUCT_DEFAULT_PROPERTY_OVERRIDES+= \
+            ro.logdumpd.enabled=0
+    else
+        PRODUCT_DEFAULT_PROPERTY_OVERRIDES+= \
+            ro.logdumpd.enabled=1
+    endif
+else
+    PRODUCT_DEFAULT_PROPERTY_OVERRIDES+= \
+        ro.logdumpd.enabled=0
+endif
+
 #for wlan
 PRODUCT_PACKAGES += \
         wificond \
@@ -254,12 +288,23 @@ PRODUCT_PACKAGES += update_engine \
                     update_engine_client \
                     update_verifier \
                     bootctrl.sdm660 \
-                    brillo_update_payload \
                     android.hardware.boot@1.0-impl \
                     android.hardware.boot@1.0-service
 
+PRODUCT_HOST_PACKAGES += \
+  brillo_update_payload
+
 #Boot control HAL test app
 PRODUCT_PACKAGES_DEBUG += bootctl
+
+PRODUCT_STATIC_BOOT_CONTROL_HAL := \
+  bootctrl.sdm660 \
+  librecovery_updater_msm \
+  libz \
+  libcutils
+
+PRODUCT_PACKAGES += \
+  update_engine_sideload
 endif
 
 #Healthd packages
@@ -301,9 +346,6 @@ PRODUCT_PACKAGES += android.hardware.thermal@1.0-impl \
 
 SDM660_DISABLE_MODULE := true
 
-#Property for setting the max timeout of autosuspend
-PRODUCT_PROPERTY_OVERRIDES += sys.autosuspend.timeout=500000
-
 PRODUCT_COMPATIBLE_PROPERTY_OVERRIDE:=true
 
 # Enable vndk-sp Libraries
@@ -311,7 +353,21 @@ PRODUCT_PACKAGES += vndk_package
 
 TARGET_MOUNT_POINTS_SYMLINKS := false
 
+# For bringup
+WLAN_BRINGUP_NEW_SP := true
+DISP_BRINGUP_NEW_SP := true
+CAM_BRINGUP_NEW_SP := true
+SEC_USERSPACE_BRINGUP_NEW_SP := true
+
+# Enable telephpony ims feature
+PRODUCT_COPY_FILES += \
+    frameworks/native/data/etc/android.hardware.telephony.ims.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.telephony.ims.xml
+
 $(call inherit-product, build/make/target/product/product_launched_with_p.mk)
 
-# Enable STA + SAP Concurrency.
-WIFI_HIDL_FEATURE_DUAL_INTERFACE := true
+###################################################################################
+# This is the End of target.mk file.
+# Now, Pickup other split product.mk files:
+###################################################################################
+$(call inherit-product-if-exists, vendor/qcom/defs/product-defs/legacy/*.mk)
+###################################################################################
