@@ -280,7 +280,8 @@ endif
 #for wlan
 PRODUCT_PACKAGES += \
         wificond \
-        wifilogd
+        wifilogd \
+        wifilearner
 
 ifeq ($(ENABLE_AB), true)
 #A/B related packages
